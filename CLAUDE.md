@@ -21,7 +21,14 @@ avant toute modification.
    pas d'authentification, pas de Docker (pour l'instant).
 6. **Robustesse réseau.** Tout appel externe passe par `market/cache.py::safe_fetch`
    qui journalise et renvoie un `FetchResult` explicite (OK / EMPTY / ERROR).
-   L'UI ne doit jamais planter parce que yfinance a échoué : elle dégrade.
+   L'UI ne doit jamais planter parce que yfinance a échoué : elle dégrade
+   (repli sur le PRU pour les cours).
+7. **Anti-blocage Yahoo (`curl_cffi`).** Yahoo Finance renvoie un **403** aux
+   requêtes sans empreinte TLS de navigateur. Tous les `yf.Ticker(...)` reçoivent
+   donc une session `curl_cffi` (impersonation Chrome) via
+   `market/cache.py::get_yf_session`. Sans `curl_cffi`, on retombe sur la session
+   par défaut (susceptible d'échouer). Les titres `NON_COTE` (parts sociales) ne
+   sont jamais interrogés et restent valorisés au PRU.
 
 ## 2. Architecture par couches
 

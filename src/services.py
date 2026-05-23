@@ -20,6 +20,10 @@ def get_current_prices(tickers: list[str]) -> dict[str, float]:
     secs = repository.get_securities().set_index("ticker")
     out: dict[str, float] = {}
     for t in tickers:
+        # Inutile d'interroger yfinance pour les titres non cotés (parts
+        # sociales) : valorisés au PRU en amont.
+        if t in secs.index and secs.loc[t, "type_actif"] == "NON_COTE":
+            continue
         px = market_prices.fetch_last_price(t)
         if px is None:
             continue
@@ -81,7 +85,11 @@ def get_price_matrix(period: str = "5y") -> pd.DataFrame:
     if positions.empty:
         return pd.DataFrame()
     secs = repository.get_securities().set_index("ticker")
-    tickers = positions["ticker"].tolist()
+    # On exclut les titres non cotés (pas d'historique yfinance).
+    tickers = [t for t in positions["ticker"].tolist()
+               if not (t in secs.index and secs.loc[t, "type_actif"] == "NON_COTE")]
+    if not tickers:
+        return pd.DataFrame()
     devises = [secs.loc[t, "devise"] if t in secs.index else "EUR" for t in tickers]
     return market_prices.fetch_price_matrix(tuple(tickers), tuple(devises), period=period)
 
