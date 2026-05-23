@@ -18,15 +18,13 @@ from src.market import prices as market_prices
 def get_current_prices(tickers: list[str]) -> dict[str, float]:
     """Dernier cours connu (converti en EUR) par ticker."""
     secs = repository.get_securities().set_index("ticker")
+    # On exclut les titres non cotés (parts sociales) : valorisés au PRU.
+    listed = tuple(t for t in tickers
+                   if not (t in secs.index and secs.loc[t, "type_actif"] == "NON_COTE"))
+    # Un seul appel groupé yf.download (évite le rate limit de Yahoo).
+    raw = market_prices.fetch_last_prices(listed)
     out: dict[str, float] = {}
-    for t in tickers:
-        # Inutile d'interroger yfinance pour les titres non cotés (parts
-        # sociales) : valorisés au PRU en amont.
-        if t in secs.index and secs.loc[t, "type_actif"] == "NON_COTE":
-            continue
-        px = market_prices.fetch_last_price(t)
-        if px is None:
-            continue
+    for t, px in raw.items():
         devise = secs.loc[t, "devise"] if t in secs.index else "EUR"
         if devise and devise != config.BASE_CURRENCY:
             px = px * market_prices.fetch_fx_rate(devise)

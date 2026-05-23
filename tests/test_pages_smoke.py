@@ -47,6 +47,10 @@ def _stub_market(monkeypatch):
     def fake_last_price(ticker):
         return float(_synthetic_close(seed=abs(hash(ticker)) % 1000).iloc[-1])
 
+    def fake_last_prices(tickers):
+        return {t: float(_synthetic_close(seed=abs(hash(t)) % 1000).iloc[-1])
+                for t in tickers}
+
     def fake_fx(devise, base="EUR"):
         return 1.0
 
@@ -73,6 +77,7 @@ def _stub_market(monkeypatch):
 
     monkeypatch.setattr(market_prices, "fetch_history", fake_history)
     monkeypatch.setattr(market_prices, "fetch_last_price", fake_last_price)
+    monkeypatch.setattr(market_prices, "fetch_last_prices", fake_last_prices)
     monkeypatch.setattr(market_prices, "fetch_fx_rate", fake_fx)
     monkeypatch.setattr(market_prices, "fetch_price_matrix", fake_matrix)
     monkeypatch.setattr(market_prices, "fetch_benchmark", fake_benchmark)
