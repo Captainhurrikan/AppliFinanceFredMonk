@@ -43,6 +43,15 @@ python scripts/seed_demo.py            # seed seulement si la base est vide
 python scripts/seed_demo.py --force    # vide puis re-seed
 ```
 
+## Déploiement Streamlit Cloud
+
+Au déploiement, **fixer la version de Python à 3.12** (Advanced settings →
+*Python version*). Les versions figées du `requirements.txt` (pandas, numpy,
+scipy…) disposent de wheels pré-compilés pour 3.11–3.13 ; avec une version trop
+récente (ex : 3.14), pip recompile depuis les sources, ce qui est long et peut
+échouer faute de bibliothèques système. Si l'app est déjà déployée : *Manage app
+→ Settings → Python version → 3.12*, puis *Reboot*.
+
 ## Pages
 
 | Page | Contenu |
