@@ -25,12 +25,14 @@ avant toute modification.
    (repli sur le PRU pour les cours).
 7. **Cotations via `yf.download` (endpoint *chart*).** Les cours, historiques,
    FX et benchmarks passent par `yf.download(...)` (`market/prices.py::_download_close`),
-   l'endpoint le plus fiable de Yahoo (approche éprouvée). On évite `Ticker.info`
-   et `fast_info` pour les **prix** car l'endpoint `quoteSummary` est davantage
-   bloqué (403). Les métadonnées/fondamentaux (`.info`) restent en best-effort
-   via une session `curl_cffi` (impersonation Chrome, `cache.py::get_yf_session`)
-   et peuvent échouer sans casser l'UI. Les titres `NON_COTE` (parts sociales)
-   ne sont jamais interrogés et restent valorisés au PRU.
+   l'endpoint le plus fiable de Yahoo. On évite `Ticker.info`/`fast_info` pour les
+   **prix** (endpoint `quoteSummary` davantage bloqué). **`yfinance` n'est PAS
+   figé** dans `requirements.txt` : Yahoo modifie souvent son anti-bot et seule
+   la dernière version négocie correctement le cookie/crumb (config identique à
+   l'app DCA de référence qui fonctionne). `get_yf_session` reste un point
+   d'extension optionnel (renvoie None si `curl_cffi` absent → session par
+   défaut). Les titres `NON_COTE` (parts sociales) ne sont jamais interrogés et
+   restent valorisés au PRU.
 
 ## 2. Architecture par couches
 
