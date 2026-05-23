@@ -69,7 +69,10 @@ récente (ex : 3.14), pip recompile depuis les sources, ce qui est long et peut
 C'est la **page d'accueil**. Elle permet de charger à chaque session les deux
 exports de ton compte titres pour mettre à jour toute l'application :
 
-- **Carnet d'ordres** → opérations (achats/ventes **exécutés** uniquement).
+- **Historique des opérations** (recommandé) → opérations achats/ventes **et
+  dividendes** (montants **nets**, frais inclus → PRU exact). L'ancien format
+  « Carnet d'ordres » (ordres exécutés, hors dividendes) reste accepté : le
+  format est **détecté automatiquement**.
 - **Portefeuille** → référentiel des titres (libellé, ISIN), cash (liquidités)
   et **snapshot de réconciliation**.
 

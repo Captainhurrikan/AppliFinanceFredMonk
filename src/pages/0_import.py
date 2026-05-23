@@ -27,7 +27,11 @@ if last_import:
 
 # --- Téléversement ---------------------------------------------------------
 c1, c2 = st.columns(2)
-orders_file = c1.file_uploader("Carnet d'ordres (CSV)", type=["csv"], key="orders")
+orders_file = c1.file_uploader(
+    "Historique des opérations (CSV)", type=["csv"], key="orders",
+    help="Export « Historique opérations » (recommandé, montants nets + "
+         "dividendes) ou ancien « Carnet d'ordres » — format détecté "
+         "automatiquement.")
 portfolio_file = c2.file_uploader("Portefeuille (CSV)", type=["csv"], key="portfolio")
 
 if st.button("🔄 Importer et mettre à jour", type="primary",
@@ -36,7 +40,7 @@ if st.button("🔄 Importer et mettre à jour", type="primary",
         orders_file.getvalue(), portfolio_file.getvalue(), replace=True)
     st.cache_data.clear()  # invalide les caches de cotations/fondamentaux
     st.success(
-        f"Import réussi : {report['n_orders']} ordres exécutés, "
+        f"Import réussi : {report['n_orders']} opérations, "
         f"{report['n_positions']} lignes au relevé, "
         f"cash {report['cash']} € (position au {report['as_of']}).")
     if report["unmapped_isins"]:

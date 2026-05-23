@@ -73,11 +73,11 @@ def _clean_libelle(libelle: str) -> str:
     return libelle.replace("Titres en portefeuille", "").strip()
 
 
-# --- Parsing du carnet d'ordres -------------------------------------------
+# --- Parsing du carnet d'ordres (ancien format) ----------------------------
 
 def parse_orders(content: bytes) -> pd.DataFrame:
     """Renvoie un DataFrame des ordres EXÉCUTÉS : date, isin, libelle, sens
-    (BUY/SELL), quantite, prix."""
+    (BUY/SELL), quantite, prix. (Format « Carnet d'ordres ».)"""
     lines = _decode(content)
     h = _find_header(lines, "Date de statut")
     if h < 0:
@@ -109,6 +109,75 @@ def parse_orders(content: bytes) -> pd.DataFrame:
             "prix": prix,
         })
     return pd.DataFrame(rows)
+
+
+# --- Parsing de l'historique des opérations (nouveau format) ---------------
+
+NORMALIZED_COLS = ["date", "isin", "libelle", "type", "quantite", "prix", "montant_brut"]
+
+
+def parse_history(content: bytes) -> pd.DataFrame:
+    """Parse l'export « Historique opérations » (montants NETS, frais inclus,
+    dividendes inclus). Renvoie le schéma normalisé NORMALIZED_COLS.
+
+    Règles de la colonne « Nature de l'opération » :
+    - contient COUPON              -> DIV (la quantité = taille de la position,
+                                      PAS un mouvement de titres -> quantite=0)
+    - quantité > 0                 -> BUY  (montant net négatif = coût)
+    - quantité < 0                 -> SELL (montant net positif = produit)
+    - quantité nulle/technique      -> ignorée
+    """
+    lines = _decode(content)
+    h = _find_header(lines, "Nature de l")
+    if h < 0:
+        return pd.DataFrame(columns=NORMALIZED_COLS)
+
+    reader = csv.reader(io.StringIO("\n".join(lines[h + 1:])), delimiter=";")
+    rows: list[dict] = []
+    for parts in reader:
+        if len(parts) < 7:
+            continue
+        date = _to_date_fr(parts[0])
+        if date is None:
+            continue
+        isin = parts[2].strip()
+        libelle = _clean_libelle(parts[1])
+        qte = _to_float_fr(parts[3])
+        montant = _to_float_fr(parts[4]) or 0.0
+        nature = _strip_accents(parts[6])
+
+        if "coupon" in nature:
+            rows.append({"date": date, "isin": isin, "libelle": libelle,
+                         "type": "DIV", "quantite": 0.0, "prix": 0.0,
+                         "montant_brut": abs(montant)})
+            continue
+        if qte is None or qte == 0:
+            continue  # ligne technique (détachement/sortie de droits à 0)
+        op_type = "BUY" if qte > 0 else "SELL"
+        q = abs(qte)
+        brut = abs(montant)
+        rows.append({"date": date, "isin": isin, "libelle": libelle,
+                     "type": op_type, "quantite": q,
+                     "prix": brut / q if q else 0.0, "montant_brut": brut})
+    return pd.DataFrame(rows)
+
+
+def parse_operations_file(content: bytes) -> pd.DataFrame:
+    """Détecte automatiquement le format du fichier d'opérations et renvoie le
+    schéma normalisé NORMALIZED_COLS.
+
+    - en-tête « Nature de l'opération » -> Historique opérations (recommandé)
+    - en-tête « Date de statut »        -> Carnet d'ordres (ancien format)
+    """
+    lines = _decode(content)
+    if _find_header(lines, "Nature de l") >= 0:
+        return parse_history(content)
+    orders = parse_orders(content)
+    if orders.empty:
+        return pd.DataFrame(columns=NORMALIZED_COLS)
+    norm = orders.rename(columns={"sens": "type"})
+    norm["montant_brut"] = norm["quantite"] * norm["prix"]
+    return norm[NORMALIZED_COLS]
 
 
 # --- Parsing du portefeuille ----------------------------------------------
@@ -173,15 +242,15 @@ def import_broker_files(orders_content: bytes, portfolio_content: bytes,
     if replace:
         repository.wipe_imported_data()
 
-    orders = parse_orders(orders_content)
+    ops_df = parse_operations_file(orders_content)
     positions, cash, as_of = parse_portfolio(portfolio_content)
     as_of = as_of or datetime.today().date().isoformat()
 
-    # Référentiel des titres : union des ISIN du portefeuille et des ordres.
+    # Référentiel des titres : union des ISIN du portefeuille et des opérations.
     libelles: dict[str, str] = {}
     for p in positions:
         libelles[p["isin"]] = p["libelle"]
-    for _, o in orders.iterrows():
+    for _, o in ops_df.iterrows():
         libelles.setdefault(o["isin"], o["libelle"])
 
     unmapped: list[str] = []
@@ -200,25 +269,28 @@ def import_broker_files(orders_content: bytes, portfolio_content: bytes,
         repository.upsert_security(ticker, libelle, devise="EUR",
                                    type_actif=type_actif, isin=isin)
 
-    # Opérations dérivées des ordres exécutés.
-    for _, o in orders.iterrows():
+    # Opérations dérivées (achats/ventes/dividendes).
+    for _, o in ops_df.iterrows():
         key = isin_to_key.get(o["isin"], o["isin"])
-        montant = o["quantite"] * o["prix"]
-        op_type = o["sens"]
-        repository.add_operation(o["date"], op_type, ticker=key,
-                                 quantite=o["quantite"], prix_unitaire=o["prix"],
-                                 montant_brut=montant, frais=0.0,
-                                 notes="Import carnet d'ordres")
+        if o["type"] == "DIV":
+            repository.add_operation(o["date"], "DIV", ticker=key,
+                                     montant_brut=o["montant_brut"], frais=0.0,
+                                     notes="Import historique (coupon)")
+        else:
+            repository.add_operation(o["date"], o["type"], ticker=key,
+                                     quantite=o["quantite"], prix_unitaire=o["prix"],
+                                     montant_brut=o["montant_brut"], frais=0.0,
+                                     notes="Import historique")
 
     # Réconciliation du cash : on ajoute un DEPOSIT pour que le cash dérivé
-    # corresponde aux liquidités du relevé (les apports/dividendes ne figurent
-    # pas dans le carnet d'ordres).
+    # corresponde aux liquidités du relevé (les apports externes ne figurent
+    # pas dans l'historique des opérations sur titres).
     if cash is not None:
         ops_now = repository.get_operations()
         from src.analytics.portfolio import cash_balance
         impacts = cash_balance(ops_now)
         deposit = cash - impacts
-        deposit_date = orders["date"].min() if not orders.empty else as_of
+        deposit_date = ops_df["date"].min() if not ops_df.empty else as_of
         repository.add_operation(deposit_date, "DEPOSIT", montant_brut=deposit,
                                  notes="Réconciliation cash (import broker)")
 
@@ -244,7 +316,7 @@ def import_broker_files(orders_content: bytes, portfolio_content: bytes,
     repository.set_meta("position_as_of", as_of)
 
     return {
-        "n_orders": int(len(orders)),
+        "n_orders": int(len(ops_df)),
         "n_positions": len(positions),
         "cash": cash,
         "as_of": as_of,
