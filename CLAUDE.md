@@ -121,6 +121,29 @@ de façon neutre (50), `Global` = moyenne des piliers.
 
 Ce n'est **pas** une recommandation : c'est un résumé chiffré et reproductible.
 
+## 6 bis. Import des exports broker (`src/broker_import.py`)
+
+Import des relevés Caisse d'Épargne / Banque Populaire (CSV `;`, **cp1252**,
+nombres FR). Décisions figées avec l'utilisateur :
+
+- **Remplacement complet** à chaque import (`repository.wipe_imported_data` :
+  vide `operations`, `securities`, `import_snapshot`, caches ; conserve
+  watchlist / alertes / frais récurrents).
+- **Dérivation stricte** : positions/PRU dérivés **uniquement** des ordres
+  **exécutés** (statut « Exécuté »). On assume que certaines lignes manquent
+  (antérieures à l'historique, non cotées, ventes sans achat → quantité ≤ 0,
+  filtrées par `build_positions`). `import_snapshot` conserve le relevé pour la
+  **réconciliation** affichée (page Import).
+- **Cash** : on insère un `DEPOSIT` de réconciliation pour que le cash dérivé
+  égale les **liquidités** du relevé (les apports/dividendes n'étant pas dans le
+  carnet). Le cash reste donc « dérivé des opérations ».
+- **ISIN → ticker** : `src/market/isin_map.py` (pré-rempli Euronext Paris,
+  None = non coté). Clé `securities.ticker` = ticker mappé, sinon l'ISIN.
+  Éditable via la page Import (`repository.remap_ticker` répercute sur
+  `operations` et `import_snapshot`).
+
+La page `src/pages/0_import.py` est la page d'accueil (`default=True`).
+
 ## 7. Benchmarks
 
 Indices Gross Return indisponibles gratuitement → **proxys ETF UCITS
