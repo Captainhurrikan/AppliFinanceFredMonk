@@ -1,7 +1,8 @@
-# Application PEA — versions figées
+# Application PEA
+# yfinance NON figé : Yahoo change souvent son anti-bot, seule la dernière
+# version négocie correctement le cookie/crumb (idem app DCA de référence).
 streamlit==1.41.1
-yfinance==0.2.51
-curl_cffi==0.15.0
+yfinance
 pandas==2.2.3
 numpy==2.1.3
 scipy==1.14.1
