@@ -1,138 +1,157 @@
-"""Dashboard — vue synthétique d'ensemble (consomme tous les autres modules)."""
+"""Dashboard — vue « PEA Synthèse » : tableau détaillé des positions + totaux.
+
+Reproduit la mise en forme de l'onglet « PEA Synthèse » de l'utilisateur :
+Numéraire (cash), tableau ligne par ligne (Date, Mouvement, Type, Entreprise,
+Code, Secteur, Quantité, PRU, Capital Investi, % Actifs, Cours Actuel,
+Plus-Value € et %, Valorisation, Dividende de l'année) et ligne de totaux
+(incluant le cash, comme dans le fichier source).
+
+Positions dérivées strictement des opérations (cf. CLAUDE.md). Les blocs
+performance/risque/benchmarks restent sur les pages dédiées.
+"""
 
 from __future__ import annotations
+
+from datetime import date
 
 import pandas as pd
 import streamlit as st
 
-from src import config, services
-from src.analytics import performance, risk, signals
+from src import services
 from src.db import repository
-from src.market import prices as market_prices
 from src.ui import components as ui
 
-st.title("🏠 Dashboard")
-st.caption("Vue synthétique du portefeuille — l'outil aide à décider, il ne décide pas.")
+st.title("🏠 Dashboard — PEA Synthèse")
+st.caption("Synthèse du portefeuille (positions dérivées des opérations). "
+           "L'outil aide à décider, il ne décide pas.")
 
 snapshot = services.get_portfolio_snapshot()
 cash = services.get_cash()
-titres = float(snapshot["valorisation"].sum()) if not snapshot.empty else 0.0
-total = titres + cash
+annee = date.today().year
 
-twr_idx = services.get_twr_index()
-history = services.get_portfolio_history()
+if snapshot.empty:
+    st.info("Aucune position. Importe tes fichiers dans la page « Import / "
+            "Mise à jour » ou saisis des opérations.")
+    st.stop()
 
-HORIZONS = {"1 mois": 30, "3 mois": 91, "1 an": 365}
+# --- Données complémentaires (date d'entrée, type, dividendes de l'année) ---
+ops = repository.get_operations()
+secs = repository.get_securities().set_index("ticker")
+
+# Date d'entrée = 1er achat de la ligne ; dividendes = coupons de l'année.
+first_buy: dict[str, pd.Timestamp] = {}
+buys = ops[(ops["type"] == "BUY") & ops["ticker"].notna()]
+if not buys.empty:
+    first_buy = buys.groupby("ticker")["date"].min().to_dict()
+
+div_annee: dict[str, float] = {}
+divs = ops[(ops["type"] == "DIV") & ops["ticker"].notna()].copy()
+if not divs.empty:
+    divs = divs[divs["date"].dt.year == annee]
+    if not divs.empty:
+        s = (divs["montant_brut"] - divs["frais"]).groupby(divs["ticker"]).sum()
+        div_annee = s.to_dict()
+
+TYPE_LABELS = {"NON_COTE": "Part Sociale", "ETF": "ETF", "OBLIGATION": "Obligation"}
 
 
-def _horizon_eur_pct(days: int) -> tuple[float | None, float | None]:
-    pct = performance.period_return(twr_idx, days) if not twr_idx.empty else None
-    if pct is None or history.empty:
-        return None, pct
-    end = history.index[-1]
-    target = end - pd.Timedelta(days=days)
-    window = history["total_value"][history.index <= target]
-    start_val = window.iloc[-1] if not window.empty else history["total_value"].iloc[0]
-    return pct * start_val, pct
+def _type_label(ticker: str) -> str:
+    ta = secs.loc[ticker, "type_actif"] if ticker in secs.index else "ACTION"
+    return TYPE_LABELS.get(ta, "Action")
 
 
-# --- Valorisation et variations -------------------------------------------
-ui.section_title("Valorisation")
-cols = st.columns(4)
-perf_1a = performance.period_return(twr_idx, 365) if not twr_idx.empty else None
-ui.kpi(cols[0], "Valorisation totale", ui.fmt_eur(total),
-       delta=ui.fmt_pct(perf_1a) + " (TWR 1a)" if perf_1a is not None else None,
-       help_text="Titres + cash disponible")
-for col, (label, days) in zip(cols[1:], HORIZONS.items()):
-    eur, pct = _horizon_eur_pct(days)
-    ui.kpi(col, f"Perf {label}",
-           ui.fmt_pct(pct) if pct is not None else "—",
-           delta=ui.fmt_eur(eur) if eur is not None else None,
-           help_text="Performance TWR (neutralise apports/retraits)")
+# --- Totaux (le total inclut le numéraire, comme le fichier source) --------
+total_titres = float(snapshot["valorisation"].sum())
+total_cout = float(snapshot["cout_total"].sum())
+total_pv = float(snapshot["pv_latente"].sum())
+total_pv_pct = total_pv / total_cout if total_cout else None
+total_div = float(sum(div_annee.values()))
+total_assets = total_titres + cash
+capital_assets = total_cout + cash
 
-if twr_idx.empty:
-    st.info("Cotations indisponibles (hors-ligne ?) : les performances seront calculées dès que les cours seront récupérés.")
+# --- KPIs d'en-tête --------------------------------------------------------
+k = st.columns(5)
+k[0].metric("Numéraire", ui.fmt_eur(cash), help="Liquidités disponibles")
+k[1].metric("Capital investi", ui.fmt_eur(capital_assets),
+            help="Coût des positions (PRU × qté, frais inclus) + numéraire")
+k[2].metric("Valorisation totale", ui.fmt_eur(total_assets),
+            help="Valorisation des titres + numéraire")
+k[3].metric("Plus-value latente", ui.fmt_eur(total_pv),
+            delta=ui.fmt_pct(total_pv_pct) if total_pv_pct is not None else None)
+k[4].metric(f"Dividendes {annee}", ui.fmt_eur(total_div))
 
-# --- TWR vs benchmarks -----------------------------------------------------
-ui.section_title("Performance vs benchmarks", "TWR du portefeuille comparé aux proxys ETF")
-benchmarks = services.get_benchmark_indices(twr_idx) if not twr_idx.empty else {}
+# --- Tableau de synthèse ---------------------------------------------------
 rows = []
-port_row = {"": "Portefeuille (TWR)"}
-for label, days in HORIZONS.items():
-    port_row[label] = performance.period_return(twr_idx, days) if not twr_idx.empty else None
-rows.append(port_row)
-for nom, serie in benchmarks.items():
-    r = {"": nom}
-    for label, days in HORIZONS.items():
-        r[label] = performance.period_return(serie, days)
-    rows.append(r)
-if len(rows) > 1:
-    bench_df = pd.DataFrame(rows).set_index("")
-    st.dataframe(bench_df.style.format(lambda v: ui.fmt_pct(v)), use_container_width=True)
-else:
-    st.caption("Benchmarks indisponibles pour le moment.")
+for _, r in snapshot.iterrows():
+    t = r["ticker"]
+    fb = first_buy.get(t)
+    pct_actifs = (r["valorisation"] / total_assets) if total_assets else None
+    rows.append({
+        "Date": fb.strftime("%d/%m/%Y") if pd.notna(fb) else "",
+        "Mouvement": "Achat",
+        "Type": _type_label(t),
+        "Entreprise": r.get("libelle") or t,
+        "Code": t.split(".")[0],
+        "Secteur": r.get("secteur") or "—",
+        "Quantité": r["quantite"],
+        "PRU": r["pru"],
+        "Capital Investi": r["cout_total"],
+        "% Actifs": pct_actifs,
+        "Cours Actuel": r["cours"],
+        "+/- Value (€)": r["pv_latente"],
+        "+/- Value (%)": r["perf_latente"],
+        "Valorisation": r["valorisation"],
+        f"Dividende {annee}": div_annee.get(t, 0.0),
+    })
 
-# --- KPIs risque -----------------------------------------------------------
-ui.section_title("Risque (1 an glissant)")
-rcols = st.columns(3)
-if not twr_idx.empty:
-    last_year = twr_idx[twr_idx.index >= twr_idx.index[-1] - pd.Timedelta(days=365)]
-    vol = performance.annualized_volatility(performance.daily_returns(last_year))
-    mdd = performance.max_drawdown(last_year)
-else:
-    vol = mdd = None
+# Ligne de totaux (NaN pour les colonnes non agrégées -> affichées « — »).
+rows.append({
+    "Date": "", "Mouvement": "", "Type": "", "Entreprise": "TOTAL", "Code": "",
+    "Secteur": "", "Quantité": float("nan"), "PRU": float("nan"),
+    "Capital Investi": capital_assets, "% Actifs": float("nan"),
+    "Cours Actuel": float("nan"), "+/- Value (€)": total_pv,
+    "+/- Value (%)": total_pv_pct, "Valorisation": total_assets,
+    f"Dividende {annee}": total_div,
+})
 
-beta_pf = None
-try:
-    px = services.get_price_matrix()
-    bench_serie = market_prices.fetch_benchmark(config.BENCHMARKS[config.DEFAULT_BENCHMARK])
-    if not px.empty and not bench_serie.empty and not snapshot.empty:
-        valos = snapshot.set_index("ticker")["valorisation"]
-        beta_pf = risk.portfolio_beta(px, valos, bench_serie)
-except Exception:
-    beta_pf = None
+df = pd.DataFrame(rows)
 
-ui.kpi(rcols[0], "Volatilité annualisée", ui.fmt_pct(vol) if vol is not None else "—")
-ui.kpi(rcols[1], "Max drawdown", ui.fmt_pct(mdd) if mdd is not None else "—")
-ui.kpi(rcols[2], "Beta portefeuille",
-       ui.fmt_num(beta_pf) if beta_pf is not None else "—",
-       help_text=f"vs {config.DEFAULT_BENCHMARK}")
 
-# --- Top / Flop ------------------------------------------------------------
-if not snapshot.empty:
-    ui.section_title("Top / Flop (+/-value latente)")
-    tcols = st.columns(2)
-    ordered = snapshot.dropna(subset=["perf_latente"]).sort_values("perf_latente", ascending=False)
-    top = ordered.head(3)[["libelle", "perf_latente", "pv_latente"]]
-    flop = ordered.tail(3).sort_values("perf_latente")[["libelle", "perf_latente", "pv_latente"]]
-    tcols[0].markdown("**🟢 Top 3 gagnantes**")
-    tcols[0].dataframe(
-        top.rename(columns={"libelle": "Titre", "perf_latente": "Perf", "pv_latente": "+/- value"})
-        .style.format({"Perf": ui.fmt_pct, "+/- value": lambda v: ui.fmt_eur(v)}),
-        hide_index=True, use_container_width=True)
-    tcols[1].markdown("**🔴 Top 3 perdantes**")
-    tcols[1].dataframe(
-        flop.rename(columns={"libelle": "Titre", "perf_latente": "Perf", "pv_latente": "+/- value"})
-        .style.format({"Perf": ui.fmt_pct, "+/- value": lambda v: ui.fmt_eur(v)}),
-        hide_index=True, use_container_width=True)
+def _fr(v, dec: int) -> str:
+    """Nombre au format français (séparateur milliers espace, décimale virgule)."""
+    if v is None or pd.isna(v):
+        return "—"
+    return f"{v:,.{dec}f}".replace(",", " ").replace(".", ",")
 
-# --- Cash + À regarder aujourd'hui ----------------------------------------
-bottom = st.columns([1, 2])
-with bottom[0]:
-    ui.section_title("Cash disponible")
-    st.metric("Cash", ui.fmt_eur(cash),
-              help="Dépôts − achats + ventes + dividendes − frais")
 
-with bottom[1]:
-    ui.section_title("À regarder aujourd'hui")
-    items: list[str] = []
-    items += [a["message"] for a in signals.position_alerts(snapshot)]
-    wl = repository.get_watchlist()
-    if not wl.empty:
-        wl_prices = services.get_current_prices(wl["ticker"].tolist())
-        items += [a["message"] for a in signals.watchlist_alerts(wl, wl_prices)]
-    if items:
-        for msg in items:
-            st.warning(msg, icon="⚠️")
-    else:
-        st.success("Rien de notable : aucune alerte déclenchée.", icon="✅")
+fmt = {
+    "Quantité": lambda v: _fr(v, 0),
+    "PRU": lambda v: _fr(v, 3),
+    "Capital Investi": lambda v: ui.fmt_eur(v, 2),
+    "% Actifs": ui.fmt_pct,
+    "Cours Actuel": lambda v: _fr(v, 4),
+    "+/- Value (€)": lambda v: ui.fmt_eur(v, 2),
+    "+/- Value (%)": ui.fmt_pct,
+    "Valorisation": lambda v: ui.fmt_eur(v, 2),
+    f"Dividende {annee}": lambda v: ui.fmt_eur(v, 2),
+}
+
+
+def _highlight_total(row):
+    return ["font-weight: bold" if row["Entreprise"] == "TOTAL" else "" for _ in row]
+
+
+def _color_pv(v):
+    if v is None or pd.isna(v):
+        return ""
+    return "color: #1e8e3e" if v >= 0 else "color: #d93025"
+
+
+styler = (df.style.format(fmt)
+          .apply(_highlight_total, axis=1)
+          .map(_color_pv, subset=["+/- Value (€)", "+/- Value (%)"]))
+
+st.dataframe(styler, hide_index=True, use_container_width=True)
+st.caption(f"Numéraire : {ui.fmt_eur(cash, 2)} · le total inclut le numéraire. "
+           "Cours et valorisation au prix yfinance du jour (repli sur le PRU si "
+           "indisponible, ex. titres non cotés).")

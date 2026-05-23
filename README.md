@@ -56,7 +56,7 @@ récente (ex : 3.14), pip recompile depuis les sources, ce qui est long et peut
 
 | Page | Contenu |
 |------|---------|
-| 🏠 Dashboard | Valorisation, perf TWR vs benchmarks, KPIs risque, top/flop, cash, alertes du jour |
+| 🏠 Dashboard | Synthèse « PEA » : numéraire (cash) + tableau détaillé ligne par ligne (Date, Mouvement, Type, Entreprise, Code, Secteur, Quantité, PRU, Capital investi, % actifs, cours actuel, +/- value €/%, valorisation, dividende de l'année) + ligne de totaux (numéraire inclus) |
 | 📊 Positions | Détail ligne par ligne (PRU, +/-value, poids, dividendes) + actions rapides |
 | ✍️ Opérations | CRUD, ajout facile de titres, import CSV, historique filtrable |
 | 📈 Performance | Courbe vs benchmarks, TWR vs MWR, décomposition, attribution, drawdown, heatmap mensuelle |
