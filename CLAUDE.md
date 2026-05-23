@@ -23,12 +23,14 @@ avant toute modification.
    qui journalise et renvoie un `FetchResult` explicite (OK / EMPTY / ERROR).
    L'UI ne doit jamais planter parce que yfinance a échoué : elle dégrade
    (repli sur le PRU pour les cours).
-7. **Anti-blocage Yahoo (`curl_cffi`).** Yahoo Finance renvoie un **403** aux
-   requêtes sans empreinte TLS de navigateur. Tous les `yf.Ticker(...)` reçoivent
-   donc une session `curl_cffi` (impersonation Chrome) via
-   `market/cache.py::get_yf_session`. Sans `curl_cffi`, on retombe sur la session
-   par défaut (susceptible d'échouer). Les titres `NON_COTE` (parts sociales) ne
-   sont jamais interrogés et restent valorisés au PRU.
+7. **Cotations via `yf.download` (endpoint *chart*).** Les cours, historiques,
+   FX et benchmarks passent par `yf.download(...)` (`market/prices.py::_download_close`),
+   l'endpoint le plus fiable de Yahoo (approche éprouvée). On évite `Ticker.info`
+   et `fast_info` pour les **prix** car l'endpoint `quoteSummary` est davantage
+   bloqué (403). Les métadonnées/fondamentaux (`.info`) restent en best-effort
+   via une session `curl_cffi` (impersonation Chrome, `cache.py::get_yf_session`)
+   et peuvent échouer sans casser l'UI. Les titres `NON_COTE` (parts sociales)
+   ne sont jamais interrogés et restent valorisés au PRU.
 
 ## 2. Architecture par couches
 
