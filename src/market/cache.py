@@ -42,6 +42,31 @@ class FetchResult(Generic[T]):
         return self.data if self.ok else default
 
 
+_YF_SESSION: Any = None
+_YF_SESSION_INIT = False
+
+
+def get_yf_session():
+    """Session HTTP pour yfinance avec impersonation navigateur (curl_cffi).
+
+    Yahoo Finance bloque (HTTP 403) les requêtes sans empreinte TLS de
+    navigateur. `curl_cffi` imite Chrome et contourne ce blocage. Si la
+    librairie est absente, on renvoie None (yfinance utilise sa session par
+    défaut, au risque d'échouer)."""
+    global _YF_SESSION, _YF_SESSION_INIT
+    if _YF_SESSION_INIT:
+        return _YF_SESSION
+    _YF_SESSION_INIT = True
+    try:
+        from curl_cffi import requests as creq
+        _YF_SESSION = creq.Session(impersonate="chrome")
+        logger.info("Session yfinance via curl_cffi (impersonate=chrome) activée")
+    except Exception as exc:  # pragma: no cover - dépend de l'environnement
+        logger.warning("curl_cffi indisponible (%s) : session yfinance par défaut", exc)
+        _YF_SESSION = None
+    return _YF_SESSION
+
+
 def _is_empty(value: Any) -> bool:
     if value is None:
         return True

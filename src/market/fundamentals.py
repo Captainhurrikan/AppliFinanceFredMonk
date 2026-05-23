@@ -15,7 +15,11 @@ import yfinance as yf
 
 from src.config import TTL_FUNDAMENTALS
 from src.db import repository
-from src.market.cache import safe_fetch
+from src.market.cache import get_yf_session, safe_fetch
+
+
+def _ticker(symbol: str):
+    return yf.Ticker(symbol, session=get_yf_session())
 
 
 def _safe_div(a, b):
@@ -55,7 +59,7 @@ def _extract_from_info(info: dict) -> dict:
 
 def _fetch_yfinance(ticker: str) -> dict:
     def _call():
-        return yf.Ticker(ticker).info
+        return _ticker(ticker).info
 
     res = safe_fetch(f"fundamentals:{ticker}", _call)
     if not res.ok or not res.data:
@@ -86,7 +90,7 @@ def get_fundamentals(ticker: str, force_refresh: bool = False) -> dict:
 def get_dividend_history(ticker: str) -> pd.Series:
     """Historique des dividendes (par date de détachement)."""
     def _call():
-        return yf.Ticker(ticker).dividends
+        return _ticker(ticker).dividends
 
     res = safe_fetch(f"dividends:{ticker}", _call)
     div = res.unwrap()

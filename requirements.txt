@@ -1,6 +1,7 @@
 # Application PEA — versions figées
 streamlit==1.41.1
 yfinance==0.2.51
+curl_cffi==0.15.0
 pandas==2.2.3
 numpy==2.1.3
 scipy==1.14.1

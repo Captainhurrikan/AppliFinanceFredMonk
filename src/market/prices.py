@@ -11,7 +11,12 @@ import streamlit as st
 import yfinance as yf
 
 from src.config import BASE_CURRENCY, TTL_HISTORY, TTL_INTRADAY
-from src.market.cache import FetchStatus, safe_fetch
+from src.market.cache import FetchStatus, get_yf_session, safe_fetch
+
+
+def _ticker(symbol: str):
+    """yf.Ticker avec session curl_cffi (contourne le 403 anti-bot de Yahoo)."""
+    return yf.Ticker(symbol, session=get_yf_session())
 
 
 # --- Métadonnées d'un titre (pour alimenter le référentiel facilement) -----
@@ -21,7 +26,7 @@ def fetch_security_info(ticker: str) -> dict:
     """Récupère libellé, secteur, pays, devise via yfinance pour pré-remplir
     l'ajout d'un nouveau titre. Renvoie {} si indisponible."""
     def _call():
-        info = yf.Ticker(ticker).info
+        info = _ticker(ticker).info
         if not info or info.get("regularMarketPrice") is None and not info.get("shortName"):
             return {}
         return info
@@ -48,7 +53,7 @@ def fetch_history(ticker: str, period: str = "5y") -> pd.DataFrame:
     """Historique de clôtures ajustées d'un ticker. Index = dates, colonne
     'close'. DataFrame vide si indisponible."""
     def _call():
-        df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
+        df = _ticker(ticker).history(period=period, auto_adjust=True)
         return df
 
     res = safe_fetch(f"history:{ticker}", _call)
@@ -66,7 +71,7 @@ def fetch_history(ticker: str, period: str = "5y") -> pd.DataFrame:
 def fetch_last_price(ticker: str) -> float | None:
     """Dernier cours connu (devise du titre). None si indisponible."""
     def _call():
-        t = yf.Ticker(ticker)
+        t = _ticker(ticker)
         fast = getattr(t, "fast_info", None)
         if fast and fast.get("last_price"):
             return float(fast["last_price"])
@@ -89,7 +94,7 @@ def fetch_fx_rate(devise: str, base: str = BASE_CURRENCY) -> float:
     pair = f"{devise.upper()}{base.upper()}=X"  # ex: USDEUR=X -> EUR par USD
 
     def _call():
-        hist = yf.Ticker(pair).history(period="5d")
+        hist = _ticker(pair).history(period="5d")
         if hist.empty:
             return None
         return float(hist["Close"].iloc[-1])
