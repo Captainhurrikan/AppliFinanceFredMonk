@@ -37,12 +37,32 @@ Total des actifs : 32 080,59 EUR
 """
 
 
+HISTORY_CSV = """Historique opérations
+Export du 23/05/26 à 14h52
+Compte N° 17515900003480065600151 MR GIOFFRE FREDERIC
+Historique au 23/05/2026
+Période: du 23/05/2024 au 23/05/2026
+
+Date de comptabilisation;Libellé Valeur;Code Valeur;Quantité;Montant net;Devise;Nature de l'opération
+22/05/2026;AIR LIQUIDE;FR0000120073;20;-3 668,31;EUR;ACHAT COMPTANT
+22/05/2026;RENAULT;FR0000131906;- 50;1 380,57;EUR;VENTE COMPTANT
+12/05/2026;RENAULT;FR0000131906;100;220,00;EUR;CREDIT COUPONS
+13/03/2025;CEIDF VAL DE MARNE;QS0007946807;500;-10 000,00;EUR;EXECUTION SOUSCRIPTION PS
+08/09/2025;HOFFMAN GREEN DPS;FR0014012KY8;800;0,00;EUR;SOUSCR.-DETACHEMENT DROITS
+10/09/2025;HOFFMAN GREEN DPS;FR0014012KY8;- 800;0,00;EUR;SOUSCRIPTION - SORTIE
+"""
+
+
 def _orders_bytes():
     return ORDERS_CSV.encode("cp1252")
 
 
 def _portfolio_bytes():
     return PORTFOLIO_CSV.encode("cp1252")
+
+
+def _history_bytes():
+    return HISTORY_CSV.encode("cp1252")
 
 
 # --- Helpers de format -----------------------------------------------------
@@ -84,6 +104,59 @@ def test_parse_portfolio():
     ceidf = [p for p in positions if p["isin"] == "QS0007946807"][0]
     assert ceidf["quantite"] == 513
     assert ceidf["libelle"] == "CEIDF VAL DE MARNE"
+
+
+# --- Parsing du nouveau format « Historique opérations » -------------------
+
+def test_parse_history_types_and_amounts():
+    df = bi.parse_history(_history_bytes())
+    by_isin = {(r["isin"], r["type"]): r for _, r in df.iterrows()}
+
+    air = by_isin[("FR0000120073", "BUY")]
+    assert air["quantite"] == 20
+    assert air["montant_brut"] == pytest.approx(3668.31)
+    assert air["prix"] == pytest.approx(3668.31 / 20)
+
+    sell = by_isin[("FR0000131906", "SELL")]
+    assert sell["quantite"] == 50  # valeur absolue
+    assert sell["montant_brut"] == pytest.approx(1380.57)
+
+    # CREDIT COUPONS -> DIV, quantité 0 (pas un mouvement de titres)
+    div = by_isin[("FR0000131906", "DIV")]
+    assert div["quantite"] == 0
+    assert div["montant_brut"] == pytest.approx(220.0)
+
+    # Souscription parts sociales -> BUY
+    ceidf = by_isin[("QS0007946807", "BUY")]
+    assert ceidf["quantite"] == 500
+    assert ceidf["montant_brut"] == pytest.approx(10000.0)
+
+
+def test_parse_operations_file_autodetects_history():
+    df = bi.parse_operations_file(_history_bytes())
+    assert list(df.columns) == bi.NORMALIZED_COLS
+    assert "DIV" in df["type"].values
+
+
+def test_parse_operations_file_autodetects_orders():
+    df = bi.parse_operations_file(_orders_bytes())
+    assert list(df.columns) == bi.NORMALIZED_COLS
+    assert set(df["type"]) <= {"BUY", "SELL"}
+    assert len(df) == 3
+
+
+def test_import_history_matches_broker_pru():
+    bi.import_broker_files(_history_bytes(), _portfolio_bytes())
+    ops = repository.get_operations()
+    # dividendes importés
+    assert portfolio.total_dividends(ops) == pytest.approx(220.0)
+    # cash réconcilié
+    assert portfolio.cash_balance(ops) == pytest.approx(1150.49, abs=1e-6)
+    # PRU AIR LIQUIDE dérivé == PRU relevé (frais inclus via montant net)
+    pos = portfolio.build_positions(ops).set_index("ticker")
+    assert pos.loc["AI.PA", "pru"] == pytest.approx(183.42, abs=0.01)
+    # CEIDF (parts sociales) reconstruite depuis les souscriptions
+    assert pos.loc["QS0007946807", "quantite"] == 500
 
 
 # --- Import complet --------------------------------------------------------

@@ -124,7 +124,17 @@ Ce n'est **pas** une recommandation : c'est un résumé chiffré et reproductibl
 ## 6 bis. Import des exports broker (`src/broker_import.py`)
 
 Import des relevés Caisse d'Épargne / Banque Populaire (CSV `;`, **cp1252**,
-nombres FR). Décisions figées avec l'utilisateur :
+nombres FR). Deux formats du fichier d'opérations, **détectés automatiquement**
+(`parse_operations_file`) :
+
+- **« Historique opérations »** (recommandé) : en-tête `Nature de l'opération`,
+  **montants nets** (frais inclus → PRU exact), inclut les dividendes
+  (`CREDIT COUPONS` → `DIV`, quantité ignorée car = taille de position). Les
+  lignes techniques (détachement/sortie de droits à 0) sont neutralisées.
+- **« Carnet d'ordres »** (ancien) : en-tête `Date de statut`, ordres `Exécuté`
+  uniquement, hors dividendes.
+
+Décisions figées avec l'utilisateur :
 
 - **Remplacement complet** à chaque import (`repository.wipe_imported_data` :
   vide `operations`, `securities`, `import_snapshot`, caches ; conserve

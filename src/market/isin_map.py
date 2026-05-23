@@ -25,7 +25,14 @@ ISIN_TO_TICKER: dict[str, str | None] = {
     "FR0000120172": "CA.PA",      # CARREFOUR
     "FR0013506730": "VK.PA",      # VALLOUREC
     "FR0000074072": "BIG.PA",     # BIGBEN INTERACTIVE
+    "FR0000120271": "TTE.PA",     # TOTALENERGIES
+    "FR0014003TT8": "DSY.PA",     # DASSAULT SYSTEMES
+    "FR0000054470": "UBI.PA",     # UBISOFT
+    "FR0010907956": "ALCAR.PA",   # CARMAT
+    "DK0062498333": "NOVO-B.CO",  # NOVO NORDISK CL.B (Copenhague)
     "QS0007946807": None,         # CEIDF parts sociales (non coté)
+    "FR0014012KY8": None,         # HOFFMAN GREEN DPS (droits, non coté)
+    "00008505207": None,          # HOFFMANN GREEN CEM (code temporaire souscription)
 }
 
 
