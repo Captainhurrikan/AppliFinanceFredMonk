@@ -39,17 +39,25 @@ if st.button("🔄 Importer et mettre à jour", type="primary",
     report = broker_import.import_broker_files(
         orders_file.getvalue(), portfolio_file.getvalue(), replace=True)
     st.cache_data.clear()  # invalide les caches de cotations/fondamentaux
-    st.success(
-        f"Import réussi : {report['n_orders']} opérations, "
-        f"{report['n_positions']} lignes au relevé, "
-        f"cash {report['cash']} € (position au {report['as_of']}).")
-    if report["unmapped_isins"]:
-        st.warning("ISIN sans ticker yfinance connu (à compléter ci-dessous) : "
-                   + ", ".join(report["unmapped_isins"]))
-    if report["non_cotes"]:
-        st.caption("Lignes non cotées (pas de cours yfinance, ex. parts "
-                   "sociales) : " + ", ".join(report["non_cotes"]))
-    st.rerun()
+    if report["n_orders"] == 0:
+        st.error(
+            "⚠️ **0 opération détectée** dans le fichier d'opérations. Le format "
+            "n'a pas été reconnu : vérifie que tu charges bien l'export "
+            "« Historique opérations » (ou « Carnet d'ordres ») dans le 1er champ. "
+            "Si tu utilises l'application déployée, assure-toi qu'elle tourne sur "
+            "la dernière version (rebuild Streamlit Cloud avec Python 3.12).")
+    else:
+        st.success(
+            f"Import réussi : {report['n_orders']} opérations, "
+            f"{report['n_positions']} lignes au relevé, "
+            f"cash {report['cash']} € (position au {report['as_of']}).")
+        if report["unmapped_isins"]:
+            st.warning("ISIN sans ticker yfinance connu (à compléter ci-dessous) : "
+                       + ", ".join(report["unmapped_isins"]))
+        if report["non_cotes"]:
+            st.caption("Lignes non cotées (pas de cours yfinance, ex. parts "
+                       "sociales) : " + ", ".join(report["non_cotes"]))
+        st.rerun()
 
 st.divider()
 
