@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import urllib.parse
 
-import feedparser
 import streamlit as st
+
+try:
+    import feedparser
+except ImportError:  # dégradation propre si feedparser indisponible
+    feedparser = None
 
 from src.config import TTL_INTRADAY
 from src.market.cache import safe_fetch
@@ -37,6 +41,8 @@ def _sentiment(titre: str) -> str:
 def fetch_news(query: str, limit: int = 8) -> list[dict]:
     """Renvoie les dernières actualités Google News pour une requête (ex: nom
     de société ou ticker). Liste de dicts {titre, lien, date, sentiment}."""
+    if feedparser is None:
+        return []
     q = urllib.parse.quote(query)
     url = f"https://news.google.com/rss/search?q={q}&hl=fr&gl=FR&ceid=FR:fr"
 
