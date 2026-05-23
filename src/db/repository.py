@@ -38,11 +38,19 @@ def get_connection() -> Iterator[sqlite3.Connection]:
 
 
 def init_db() -> None:
-    """Crée le schéma s'il n'existe pas (idempotent)."""
+    """Crée le schéma s'il n'existe pas (idempotent) + petites migrations."""
     config.ensure_data_dir()
     schema_sql = config.SCHEMA_PATH.read_text(encoding="utf-8")
     with get_connection() as conn:
         conn.executescript(schema_sql)
+        _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Migrations légères pour bases créées avant l'ajout de colonnes/tables."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(securities)").fetchall()}
+    if "isin" not in cols:
+        conn.execute("ALTER TABLE securities ADD COLUMN isin TEXT")
 
 
 def _read_sql(query: str, params: tuple | dict = ()) -> pd.DataFrame:
@@ -61,6 +69,7 @@ def upsert_security(
     type_actif: str = "ACTION",
     cap_boursiere: float | None = None,
     notes: str | None = None,
+    isin: str | None = None,
 ) -> None:
     """Insère ou met à jour un titre (référentiel). Permet d'ajouter facilement
     un nouveau ticker depuis l'UI."""
@@ -68,9 +77,10 @@ def upsert_security(
         conn.execute(
             """
             INSERT INTO securities
-                (ticker, libelle, secteur, pays, devise, type_actif, cap_boursiere, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (ticker, isin, libelle, secteur, pays, devise, type_actif, cap_boursiere, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticker) DO UPDATE SET
+                isin=COALESCE(excluded.isin, securities.isin),
                 libelle=excluded.libelle,
                 secteur=COALESCE(excluded.secteur, securities.secteur),
                 pays=COALESCE(excluded.pays, securities.pays),
@@ -79,8 +89,30 @@ def upsert_security(
                 cap_boursiere=COALESCE(excluded.cap_boursiere, securities.cap_boursiere),
                 notes=COALESCE(excluded.notes, securities.notes)
             """,
-            (ticker, libelle, secteur, pays, devise, type_actif, cap_boursiere, notes),
+            (ticker, isin, libelle, secteur, pays, devise, type_actif, cap_boursiere, notes),
         )
+
+
+def remap_ticker(old_ticker: str, new_ticker: str) -> None:
+    """Renomme la clé d'un titre (ex: ISIN -> ticker yfinance) et répercute le
+    changement sur les opérations et le snapshot d'import."""
+    if old_ticker == new_ticker or not new_ticker:
+        return
+    with get_connection() as conn:
+        conn.execute("PRAGMA foreign_keys = OFF;")
+        # Si la cible existe déjà, on bascule les références puis on supprime l'ancien.
+        exists = conn.execute("SELECT 1 FROM securities WHERE ticker = ?",
+                              (new_ticker,)).fetchone()
+        conn.execute("UPDATE operations SET ticker = ? WHERE ticker = ?",
+                     (new_ticker, old_ticker))
+        conn.execute("UPDATE import_snapshot SET ticker = ? WHERE ticker = ?",
+                     (new_ticker, old_ticker))
+        if exists:
+            conn.execute("DELETE FROM securities WHERE ticker = ?", (old_ticker,))
+        else:
+            conn.execute("UPDATE securities SET ticker = ? WHERE ticker = ?",
+                         (new_ticker, old_ticker))
+        conn.execute("PRAGMA foreign_keys = ON;")
 
 
 def get_securities(actifs_only: bool = False) -> pd.DataFrame:
@@ -373,3 +405,50 @@ def is_empty() -> bool:
     with get_connection() as conn:
         n = conn.execute("SELECT COUNT(*) FROM operations").fetchone()[0]
     return n == 0
+
+
+# --- Métadonnées applicatives ----------------------------------------------
+
+def set_meta(cle: str, valeur: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO app_meta (cle, valeur) VALUES (?, ?) "
+            "ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",
+            (cle, str(valeur)),
+        )
+
+
+def get_meta(cle: str, default: str | None = None) -> str | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT valeur FROM app_meta WHERE cle = ?", (cle,)).fetchone()
+    return row[0] if row else default
+
+
+# --- Snapshot d'import (réconciliation) ------------------------------------
+
+def replace_import_snapshot(rows: list[dict], as_of: str) -> None:
+    cols = ["ticker", "isin", "libelle", "quantite", "devise", "cours",
+            "valorisation", "pru", "pv_latente", "pct_actif"]
+    with get_connection() as conn:
+        conn.execute("DELETE FROM import_snapshot")
+        conn.executemany(
+            f"INSERT INTO import_snapshot ({', '.join(cols)}, as_of) "
+            f"VALUES ({', '.join(['?'] * len(cols))}, ?)",
+            [tuple(r.get(c) for c in cols) + (as_of,) for r in rows],
+        )
+
+
+def get_import_snapshot() -> pd.DataFrame:
+    return _read_sql("SELECT * FROM import_snapshot ORDER BY valorisation DESC")
+
+
+# --- Remise à zéro pour import "remplacement complet" ----------------------
+
+def wipe_imported_data() -> None:
+    """Vide les données issues d'un import (opérations, référentiel, snapshot,
+    caches de marché). Conserve la configuration utilisateur (watchlist,
+    alertes, frais récurrents)."""
+    with get_connection() as conn:
+        for table in ("operations", "securities", "import_snapshot",
+                      "fondamentaux_cache", "prix_cache"):
+            conn.execute(f"DELETE FROM {table}")

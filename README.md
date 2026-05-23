@@ -43,6 +43,15 @@ python scripts/seed_demo.py            # seed seulement si la base est vide
 python scripts/seed_demo.py --force    # vide puis re-seed
 ```
 
+## Déploiement Streamlit Cloud
+
+Au déploiement, **fixer la version de Python à 3.12** (Advanced settings →
+*Python version*). Les versions figées du `requirements.txt` (pandas, numpy,
+scipy…) disposent de wheels pré-compilés pour 3.11–3.13 ; avec une version trop
+récente (ex : 3.14), pip recompile depuis les sources, ce qui est long et peut
+échouer faute de bibliothèques système. Si l'app est déjà déployée : *Manage app
+→ Settings → Python version → 3.12*, puis *Reboot*.
+
 ## Pages
 
 | Page | Contenu |
@@ -54,6 +63,33 @@ python scripts/seed_demo.py --force    # vide puis re-seed
 | 🔎 Analyse fonda | Ratios valo/qualité/croissance/solvabilité, score transparent, dividendes 10 ans |
 | ⚖️ Risque | Diversification, concentration (HHI), corrélations, beta, stress tests |
 | 🎯 Opportunités | Watchlist + cibles, signaux techniques/fondamentaux, alertes, news RSS |
+
+## Import des données broker (page « Import / Mise à jour »)
+
+C'est la **page d'accueil**. Elle permet de charger à chaque session les deux
+exports de ton compte titres pour mettre à jour toute l'application :
+
+- **Carnet d'ordres** → opérations (achats/ventes **exécutés** uniquement).
+- **Portefeuille** → référentiel des titres (libellé, ISIN), cash (liquidités)
+  et **snapshot de réconciliation**.
+
+Choix de fonctionnement (configurés avec l'utilisateur) :
+
+- **Remplacement complet** : chaque import écrase les données précédentes.
+- **Dérivation stricte** : les positions et le PRU sont dérivés **uniquement**
+  des ordres exécutés. Les lignes antérieures à l'historique d'ordres, non
+  cotées (ex. parts sociales) ou vendues sans achat dans la période
+  n'apparaissent pas — un **tableau de réconciliation** affiche ces écarts vs
+  ton relevé.
+- **Cash** : aligné sur les liquidités du relevé via une opération de
+  réconciliation (les apports/dividendes ne figurent pas dans le carnet).
+- **Mapping ISIN → ticker yfinance** pré-rempli (Euronext Paris) et **éditable**
+  depuis la page d'import ; les lignes non cotées gardent la valorisation du
+  relevé.
+
+Format attendu : exports CSV `;`, encodage Windows (cp1252), nombres au format
+français. Le parsing ignore les en-têtes/pieds de page et les ordres
+`Annulé`/`Tombé`.
 
 ## Benchmarks
 

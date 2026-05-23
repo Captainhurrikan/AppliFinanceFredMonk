@@ -18,6 +18,7 @@ from src.market import news as news_mod
 from src.market import prices as market_prices
 
 PAGES = [
+    "src/pages/0_import.py",
     "src/pages/1_dashboard.py",
     "src/pages/2_positions.py",
     "src/pages/3_operations.py",

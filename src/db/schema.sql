@@ -7,12 +7,13 @@ PRAGMA foreign_keys = ON;
 -- Référentiel des titres : permet d'ajouter facilement un nouveau ticker
 -- (libellé, secteur, pays, devise) depuis l'application.
 CREATE TABLE IF NOT EXISTS securities (
-    ticker      TEXT PRIMARY KEY,           -- symbole yfinance complet (ex: AIR.PA)
+    ticker      TEXT PRIMARY KEY,           -- symbole yfinance complet (ex: AIR.PA) ; ISIN si non mappé
+    isin        TEXT,                        -- code ISIN du broker (ex: FR0000120073)
     libelle     TEXT NOT NULL,
     secteur     TEXT,
     pays        TEXT,
     devise      TEXT NOT NULL DEFAULT 'EUR',
-    type_actif  TEXT DEFAULT 'ACTION',       -- ACTION / ETF / OBLIGATION ...
+    type_actif  TEXT DEFAULT 'ACTION',       -- ACTION / ETF / OBLIGATION / NON_COTE
     cap_boursiere REAL,                       -- capitalisation (devise du titre)
     date_ajout  TEXT NOT NULL DEFAULT (date('now')),
     actif       INTEGER NOT NULL DEFAULT 1,   -- 1 = suivi, 0 = archivé
@@ -110,3 +111,25 @@ CREATE TABLE IF NOT EXISTS prix_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_prix_cache_ticker ON prix_cache(ticker);
+
+-- Snapshot du portefeuille tel qu'importé depuis le broker (référence de
+-- réconciliation). Vidé puis rerempli à chaque import.
+CREATE TABLE IF NOT EXISTS import_snapshot (
+    ticker      TEXT,
+    isin        TEXT,
+    libelle     TEXT,
+    quantite    REAL,
+    devise      TEXT,
+    cours       REAL,
+    valorisation REAL,
+    pru         REAL,
+    pv_latente  REAL,
+    pct_actif   REAL,
+    as_of       TEXT
+);
+
+-- Métadonnées applicatives (clé/valeur) : date d'import, cash broker, etc.
+CREATE TABLE IF NOT EXISTS app_meta (
+    cle    TEXT PRIMARY KEY,
+    valeur TEXT
+);

@@ -36,7 +36,8 @@ _bootstrap()
 PAGES_DIR = ROOT / "src" / "pages"
 
 pages = [
-    st.Page(str(PAGES_DIR / "1_dashboard.py"), title="Dashboard", icon="🏠", default=True),
+    st.Page(str(PAGES_DIR / "0_import.py"), title="Import / Mise à jour", icon="📥", default=True),
+    st.Page(str(PAGES_DIR / "1_dashboard.py"), title="Dashboard", icon="🏠"),
     st.Page(str(PAGES_DIR / "2_positions.py"), title="Positions", icon="📊"),
     st.Page(str(PAGES_DIR / "3_operations.py"), title="Opérations", icon="✍️"),
     st.Page(str(PAGES_DIR / "4_performance.py"), title="Performance", icon="📈"),
