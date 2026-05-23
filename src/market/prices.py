@@ -15,8 +15,43 @@ from src.market.cache import FetchStatus, get_yf_session, safe_fetch
 
 
 def _ticker(symbol: str):
-    """yf.Ticker avec session curl_cffi (contourne le 403 anti-bot de Yahoo)."""
+    """yf.Ticker avec session curl_cffi (utilisé pour les métadonnées .info)."""
     return yf.Ticker(symbol, session=get_yf_session())
+
+
+def _download_close(symbol: str, period: str = "5d", start=None) -> pd.Series:
+    """Série de clôtures via `yf.download` (endpoint *chart*, le plus fiable —
+    même approche que l'app DCA de référence). Index tz-naïf, vide si rien.
+
+    `yf.download` renvoie parfois des colonnes MultiIndex ('Close', <ticker>) :
+    on extrait la colonne Close de façon robuste.
+    """
+    kwargs = {"progress": False, "auto_adjust": True}
+    if start is not None:
+        data = yf.download(symbol, start=start, **kwargs)
+    else:
+        data = yf.download(symbol, period=period, **kwargs)
+    if data is None or len(data) == 0:
+        return pd.Series(dtype=float)
+
+    cols = data.columns
+    if isinstance(cols, pd.MultiIndex):
+        if "Close" not in cols.get_level_values(0):
+            return pd.Series(dtype=float)
+        close = data["Close"]
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+    else:
+        if "Close" not in cols:
+            return pd.Series(dtype=float)
+        close = data["Close"]
+
+    close = pd.to_numeric(close, errors="coerce").dropna()
+    idx = pd.to_datetime(close.index)
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_localize(None)
+    close.index = idx
+    return close
 
 
 # --- Métadonnées d'un titre (pour alimenter le référentiel facilement) -----
@@ -50,38 +85,22 @@ def fetch_security_info(ticker: str) -> dict:
 
 @st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
 def fetch_history(ticker: str, period: str = "5y") -> pd.DataFrame:
-    """Historique de clôtures ajustées d'un ticker. Index = dates, colonne
-    'close'. DataFrame vide si indisponible."""
-    def _call():
-        df = _ticker(ticker).history(period=period, auto_adjust=True)
-        return df
-
-    res = safe_fetch(f"history:{ticker}", _call)
+    """Historique de clôtures ajustées d'un ticker (via yf.download). Index =
+    dates, colonne 'close'. DataFrame vide si indisponible."""
+    res = safe_fetch(f"history:{ticker}", _download_close, ticker, period)
     if res.status != FetchStatus.OK:
         return pd.DataFrame(columns=["close"])
-    df = res.data
-    if "Close" not in df.columns:
-        return pd.DataFrame(columns=["close"])
-    out = df[["Close"]].rename(columns={"Close": "close"})
-    out.index = pd.to_datetime(out.index).tz_localize(None)
-    return out
+    return res.data.to_frame("close")
 
 
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
 def fetch_last_price(ticker: str) -> float | None:
-    """Dernier cours connu (devise du titre). None si indisponible."""
-    def _call():
-        t = _ticker(ticker)
-        fast = getattr(t, "fast_info", None)
-        if fast and fast.get("last_price"):
-            return float(fast["last_price"])
-        hist = t.history(period="5d", auto_adjust=True)
-        if not hist.empty:
-            return float(hist["Close"].iloc[-1])
+    """Dernier cours connu (devise du titre) via yf.download. None si indispo."""
+    res = safe_fetch(f"last:{ticker}", _download_close, ticker, "5d")
+    s = res.unwrap()
+    if s is None or len(s) == 0:
         return None
-
-    res = safe_fetch(f"last:{ticker}", _call)
-    return res.unwrap()
+    return float(s.iloc[-1])
 
 
 # --- Conversion de change --------------------------------------------------
@@ -93,15 +112,11 @@ def fetch_fx_rate(devise: str, base: str = BASE_CURRENCY) -> float:
         return 1.0
     pair = f"{devise.upper()}{base.upper()}=X"  # ex: USDEUR=X -> EUR par USD
 
-    def _call():
-        hist = _ticker(pair).history(period="5d")
-        if hist.empty:
-            return None
-        return float(hist["Close"].iloc[-1])
-
-    res = safe_fetch(f"fx:{pair}", _call)
-    rate = res.unwrap()
-    return rate if rate else 1.0
+    res = safe_fetch(f"fx:{pair}", _download_close, pair, "5d")
+    s = res.unwrap()
+    if s is None or len(s) == 0:
+        return 1.0
+    return float(s.iloc[-1])
 
 
 def to_eur(amount: float, devise: str) -> float:
