@@ -94,6 +94,13 @@ def safe_fetch(label: str, func: Callable[..., T], *args: Any,
             return FetchResult(FetchStatus.OK, data=value)
         except Exception as exc:  # yfinance lève des erreurs variées
             last_err = exc
+            # Inutile (et contre-productif) de réessayer sur un rate limit :
+            # cela aggrave le 429. On abandonne immédiatement.
+            msg = str(exc).lower()
+            if "rate limit" in msg or "too many requests" in msg:
+                logger.warning("Fetch %s : rate limit Yahoo, abandon", label)
+                return FetchResult(FetchStatus.ERROR,
+                                   message=f"Rate limit Yahoo pour {label}")
             logger.warning("Fetch %s : tentative %d échouée (%s)",
                            label, attempt + 1, exc)
             if attempt < retries:

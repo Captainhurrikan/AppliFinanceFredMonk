@@ -103,6 +103,47 @@ def fetch_last_price(ticker: str) -> float | None:
     return float(s.iloc[-1])
 
 
+def _close_frame(data: pd.DataFrame, tickers: tuple[str, ...]) -> pd.DataFrame:
+    """Extrait les clôtures d'un résultat `yf.download` multi-tickers en un
+    DataFrame (colonnes = tickers), robuste aux colonnes MultiIndex et au cas
+    mono-ticker."""
+    if data is None or len(data) == 0:
+        return pd.DataFrame()
+    if isinstance(data.columns, pd.MultiIndex):
+        if "Close" not in data.columns.get_level_values(0):
+            return pd.DataFrame()
+        close = data["Close"].copy()
+    else:
+        if "Close" not in data.columns:
+            return pd.DataFrame()
+        close = data[["Close"]].copy()
+        close.columns = [tickers[0]]
+    idx = pd.to_datetime(close.index)
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_localize(None)
+    close.index = idx
+    return close.apply(pd.to_numeric, errors="coerce")
+
+
+@st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
+def fetch_last_prices(tickers: tuple[str, ...]) -> dict[str, float]:
+    """Derniers cours pour plusieurs tickers en **un seul** appel groupé
+    (`yf.download`), comme l'app DCA — évite le rate limit de Yahoo."""
+    if not tickers:
+        return {}
+
+    def _call():
+        return yf.download(list(tickers), period="5d", progress=False,
+                           auto_adjust=True)
+
+    res = safe_fetch(f"batch_last:{len(tickers)}", _call)
+    close = _close_frame(res.unwrap(), tickers)
+    if close.empty:
+        return {}
+    last = close.ffill().iloc[-1]
+    return {t: float(v) for t, v in last.items() if pd.notna(v)}
+
+
 # --- Conversion de change --------------------------------------------------
 
 @st.cache_data(ttl=TTL_INTRADAY, show_spinner=False)
@@ -129,23 +170,29 @@ def to_eur(amount: float, devise: str) -> float:
 @st.cache_data(ttl=TTL_HISTORY, show_spinner="Chargement des cotations…")
 def fetch_price_matrix(tickers: tuple[str, ...], devises: tuple[str, ...],
                        period: str = "5y") -> pd.DataFrame:
-    """Matrice de clôtures EUR (index = dates, colonnes = tickers).
+    """Matrice de clôtures EUR (index = dates, colonnes = tickers), récupérée en
+    **un seul** appel `yf.download` groupé (évite le rate limit de Yahoo).
 
-    Chaque colonne est convertie en EUR via le taux de change spot courant
+    Chaque colonne non-EUR est convertie via le taux de change spot courant
     (approximation MVP : pas de série FX historique).
     """
-    series = {}
-    for ticker, devise in zip(tickers, devises):
-        hist = fetch_history(ticker, period=period)
-        if hist.empty:
-            continue
-        close = hist["close"]
-        if devise and devise.upper() != BASE_CURRENCY:
-            close = close * fetch_fx_rate(devise)
-        series[ticker] = close
-    if not series:
+    if not tickers:
         return pd.DataFrame()
-    return pd.DataFrame(series).sort_index()
+
+    def _call():
+        return yf.download(list(tickers), period=period, progress=False,
+                           auto_adjust=True)
+
+    res = safe_fetch(f"matrix:{len(tickers)}", _call)
+    close = _close_frame(res.unwrap(), tickers)
+    if close.empty:
+        return pd.DataFrame()
+
+    fx = {d: fetch_fx_rate(d) for d in set(devises) if d and d.upper() != BASE_CURRENCY}
+    for ticker, devise in zip(tickers, devises):
+        if ticker in close.columns and devise in fx:
+            close[ticker] = close[ticker] * fx[devise]
+    return close.sort_index()
 
 
 @st.cache_data(ttl=TTL_HISTORY, show_spinner=False)
