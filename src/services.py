@@ -64,6 +64,24 @@ def get_portfolio_snapshot() -> pd.DataFrame:
     return positions.sort_values("valorisation", ascending=False).reset_index(drop=True)
 
 
+def get_realized_summary() -> pd.DataFrame:
+    """Bénéfices réalisés par ligne : plus-value effective + dividendes perçus.
+
+    Inclut les lignes déjà soldées (vendues). Colonnes : ticker, libelle,
+    secteur, pv_realisee, dividendes, frais_titre, total_realise.
+    """
+    ops = repository.get_operations()
+    realized = portfolio.realized_summary(ops)
+    if realized.empty:
+        return realized
+
+    secs = repository.get_securities()
+    meta_cols = ["ticker", "libelle", "secteur"]
+    realized = realized.merge(secs[meta_cols], on="ticker", how="left")
+    realized["libelle"] = realized["libelle"].fillna(realized["ticker"])
+    return realized.sort_values("total_realise", ascending=False).reset_index(drop=True)
+
+
 def get_cash() -> float:
     return portfolio.cash_balance(repository.get_operations())
 

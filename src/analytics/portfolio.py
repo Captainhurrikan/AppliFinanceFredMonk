@@ -116,36 +116,64 @@ def build_positions(operations: pd.DataFrame) -> pd.DataFrame:
     return df[df["quantite"] > 1e-9].reset_index(drop=True)
 
 
-def realized_pnl(operations: pd.DataFrame) -> float:
-    """Plus-value réalisée totale (toutes lignes, y compris soldées)."""
+def realized_summary(operations: pd.DataFrame) -> pd.DataFrame:
+    """Bénéfices réalisés par ticker : plus-value réalisée (ventes) + dividendes.
+
+    Contrairement à `build_positions`, inclut les lignes totalement soldées
+    (déjà vendues) afin de refléter l'intégralité des bénéfices effectués.
+    Colonnes : ticker, pv_realisee, dividendes, frais_titre, total_realise.
+    Ne garde que les tickers ayant une plus-value réalisée ou un dividende.
+    """
+    cols = ["ticker", "pv_realisee", "dividendes", "frais_titre", "total_realise"]
     if operations.empty:
-        return 0.0
-    pos = build_positions(operations)
-    realized_open = pos["pv_realisee"].sum() if not pos.empty else 0.0
-    # Lignes totalement soldées : recalcul indépendant.
+        return pd.DataFrame(columns=cols)
+
     ops = operations[operations["ticker"].notna()].sort_values(["ticker", "date", "id"])
-    total = 0.0
-    for _, grp in ops.groupby("ticker"):
+    rows: list[dict] = []
+    for ticker, grp in ops.groupby("ticker"):
         qte = 0.0
-        cout_total = 0.0
-        pv = 0.0
+        cout_total = 0.0  # coût des titres encore détenus (PRU * qte)
+        pv_realisee = 0.0
+        dividendes = 0.0
+        frais_titre = 0.0
         for _, r in grp.iterrows():
             t = r["type"]
             frais = float(r.get("frais") or 0.0)
             if t == "BUY":
                 cout_total += _buy_amount(r) + frais
                 qte += float(r.get("quantite") or 0.0)
+                frais_titre += frais
             elif t == "SELL":
                 q = float(r.get("quantite") or 0.0)
                 pru = cout_total / qte if qte > 0 else 0.0
-                pv += (_buy_amount(r) - frais) - pru * q
+                pv_realisee += (_buy_amount(r) - frais) - pru * q
                 cout_total -= pru * q
                 qte -= q
-                if qte < 1e-9:
+                frais_titre += frais
+                if qte < 1e-9:  # ligne soldée
                     qte = 0.0
                     cout_total = 0.0
-        total += pv
-    return float(total)
+            elif t == "DIV":
+                dividendes += float(r.get("montant_brut") or 0.0) - frais
+            elif t == "FEE":
+                frais_titre += float(r.get("montant_brut") or 0.0) + frais
+        rows.append({
+            "ticker": ticker,
+            "pv_realisee": pv_realisee,
+            "dividendes": dividendes,
+            "frais_titre": frais_titre,
+            "total_realise": pv_realisee + dividendes,
+        })
+
+    df = pd.DataFrame(rows, columns=cols)
+    mask = (df["pv_realisee"].abs() > 1e-9) | (df["dividendes"].abs() > 1e-9)
+    return df[mask].reset_index(drop=True)
+
+
+def realized_pnl(operations: pd.DataFrame) -> float:
+    """Plus-value réalisée totale (toutes lignes, y compris soldées)."""
+    summary = realized_summary(operations)
+    return float(summary["pv_realisee"].sum()) if not summary.empty else 0.0
 
 
 def total_dividends(operations: pd.DataFrame) -> float:
