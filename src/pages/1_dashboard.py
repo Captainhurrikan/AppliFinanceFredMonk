@@ -24,6 +24,7 @@ from src.ui import components as ui
 st.title("🏠 Dashboard — PEA Synthèse")
 st.caption("Synthèse du portefeuille (positions dérivées des opérations). "
            "L'outil aide à décider, il ne décide pas.")
+ui.refresh_prices_button(key="refresh_dashboard")
 
 snapshot = services.get_portfolio_snapshot()
 cash = services.get_cash()

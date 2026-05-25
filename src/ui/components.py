@@ -57,6 +57,19 @@ def section_title(title: str, subtitle: str | None = None) -> None:
         st.caption(subtitle)
 
 
+def refresh_prices_button(key: str = "refresh_prices") -> None:
+    """Petit bouton de rafraîchissement des cours.
+
+    Vide le cache de données (cotations) et relance la page pour forcer un
+    nouvel appel yfinance — les valorisations sont sinon servies depuis le
+    cache selon les TTL de config.py.
+    """
+    if st.button("🔄 Rafraîchir les cours", key=key,
+                 help="Recharge les derniers cours depuis yfinance"):
+        st.cache_data.clear()
+        st.rerun()
+
+
 # --- Formulaire d'opération ------------------------------------------------
 
 OPERATION_LABELS = {

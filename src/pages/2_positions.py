@@ -8,6 +8,7 @@ from src import services
 from src.ui import components as ui
 
 st.title("📊 Positions")
+ui.refresh_prices_button(key="refresh_positions")
 
 snapshot = services.get_portfolio_snapshot()
 
