@@ -17,10 +17,10 @@ if snapshot.empty:
 
 display = snapshot.copy()
 display = display[[
-    "ticker", "libelle", "secteur", "pays", "quantite", "pru", "cours",
+    "ticker", "libelle", "quantite", "pru", "cours",
     "valorisation", "pv_latente", "perf_latente", "poids", "dividendes",
 ]].rename(columns={
-    "ticker": "Ticker", "libelle": "Libellé", "secteur": "Secteur", "pays": "Pays",
+    "ticker": "Ticker", "libelle": "Libellé",
     "quantite": "Qté", "pru": "PRU", "cours": "Cours", "valorisation": "Valo",
     "pv_latente": "+/- value (€)", "perf_latente": "+/- value (%)",
     "poids": "Poids", "dividendes": "Div. perçus",

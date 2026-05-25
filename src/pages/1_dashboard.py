@@ -2,7 +2,7 @@
 
 Reproduit la mise en forme de l'onglet « PEA Synthèse » de l'utilisateur :
 Numéraire (cash), tableau ligne par ligne (Date, Mouvement, Type, Entreprise,
-Code, Secteur, Quantité, PRU, Capital Investi, % Actifs, Cours Actuel,
+Quantité, PRU, Capital Investi, % Actifs, Cours Actuel,
 Plus-Value € et %, Valorisation, Dividende de l'année) et ligne de totaux
 (incluant le cash, comme dans le fichier source).
 
@@ -91,8 +91,6 @@ for _, r in snapshot.iterrows():
         "Mouvement": "Achat",
         "Type": _type_label(t),
         "Entreprise": r.get("libelle") or t,
-        "Code": t.split(".")[0],
-        "Secteur": r.get("secteur") or "—",
         "Quantité": r["quantite"],
         "PRU": r["pru"],
         "Capital Investi": r["cout_total"],
@@ -106,8 +104,8 @@ for _, r in snapshot.iterrows():
 
 # Ligne de totaux (NaN pour les colonnes non agrégées -> affichées « — »).
 rows.append({
-    "Date": "", "Mouvement": "", "Type": "", "Entreprise": "TOTAL", "Code": "",
-    "Secteur": "", "Quantité": float("nan"), "PRU": float("nan"),
+    "Date": "", "Mouvement": "", "Type": "", "Entreprise": "TOTAL",
+    "Quantité": float("nan"), "PRU": float("nan"),
     "Capital Investi": capital_assets, "% Actifs": float("nan"),
     "Cours Actuel": float("nan"), "+/- Value (€)": total_pv,
     "+/- Value (%)": total_pv_pct, "Valorisation": total_assets,
@@ -185,14 +183,12 @@ else:
         rrows.append({
             "Type": _type_label(t),
             "Entreprise": r.get("libelle") or t,
-            "Code": t.split(".")[0],
-            "Secteur": r.get("secteur") or "—",
             "Plus-value réalisée (€)": r["pv_realisee"],
             "Dividendes perçus (€)": r["dividendes"],
             "Total réalisé (€)": r["total_realise"],
         })
     rrows.append({
-        "Type": "", "Entreprise": "TOTAL", "Code": "", "Secteur": "",
+        "Type": "", "Entreprise": "TOTAL",
         "Plus-value réalisée (€)": total_pv_real,
         "Dividendes perçus (€)": total_div_real,
         "Total réalisé (€)": total_benef,
