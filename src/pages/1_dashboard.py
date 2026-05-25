@@ -155,3 +155,56 @@ st.dataframe(styler, hide_index=True, use_container_width=True)
 st.caption(f"Numéraire : {ui.fmt_eur(cash, 2)} · le total inclut le numéraire. "
            "Cours et valorisation au prix yfinance du jour (repli sur le PRU si "
            "indisponible, ex. titres non cotés).")
+
+# --- Bénéfices réalisés (opérations passées) -------------------------------
+st.divider()
+st.subheader("💰 Bénéfices réalisés")
+st.caption("Plus-values effectives (lignes vendues, en tout ou partie) et "
+           "dividendes perçus depuis l'origine. Complémentaire des plus-values "
+           "latentes ci-dessus, qui ne portent que sur les titres encore détenus.")
+
+realized = services.get_realized_summary()
+if realized.empty:
+    st.info("Aucune vente ni dividende enregistré pour l'instant.")
+else:
+    total_pv_real = float(realized["pv_realisee"].sum())
+    total_div_real = float(realized["dividendes"].sum())
+    total_benef = total_pv_real + total_div_real
+
+    kr = st.columns(3)
+    kr[0].metric("Plus-value réalisée", ui.fmt_eur(total_pv_real),
+                 help="Gains/pertes effectifs sur les titres vendus (frais inclus)")
+    kr[1].metric("Dividendes perçus", ui.fmt_eur(total_div_real),
+                 help="Total des coupons encaissés depuis l'origine (frais déduits)")
+    kr[2].metric("Total bénéfices réalisés", ui.fmt_eur(total_benef),
+                 help="Plus-value réalisée + dividendes perçus")
+
+    rrows = []
+    for _, r in realized.iterrows():
+        t = r["ticker"]
+        rrows.append({
+            "Type": _type_label(t),
+            "Entreprise": r.get("libelle") or t,
+            "Code": t.split(".")[0],
+            "Secteur": r.get("secteur") or "—",
+            "Plus-value réalisée (€)": r["pv_realisee"],
+            "Dividendes perçus (€)": r["dividendes"],
+            "Total réalisé (€)": r["total_realise"],
+        })
+    rrows.append({
+        "Type": "", "Entreprise": "TOTAL", "Code": "", "Secteur": "",
+        "Plus-value réalisée (€)": total_pv_real,
+        "Dividendes perçus (€)": total_div_real,
+        "Total réalisé (€)": total_benef,
+    })
+    rdf = pd.DataFrame(rrows)
+
+    rfmt = {
+        "Plus-value réalisée (€)": lambda v: ui.fmt_eur(v, 2),
+        "Dividendes perçus (€)": lambda v: ui.fmt_eur(v, 2),
+        "Total réalisé (€)": lambda v: ui.fmt_eur(v, 2),
+    }
+    rstyler = (rdf.style.format(rfmt)
+               .apply(_highlight_total, axis=1)
+               .map(_color_pv, subset=["Plus-value réalisée (€)", "Total réalisé (€)"]))
+    st.dataframe(rstyler, hide_index=True, use_container_width=True)
