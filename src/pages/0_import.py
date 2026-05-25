@@ -17,6 +17,7 @@ st.title("📥 Import / Mise à jour des données")
 st.caption("Charge tes deux exports broker pour mettre à jour l'ensemble de "
            "l'application. Remplacement complet : les données précédentes sont "
            "écrasées à chaque import.")
+ui.refresh_prices_button(key="refresh_import")
 
 last_import = repository.get_meta("last_import")
 if last_import:

@@ -35,15 +35,13 @@ _bootstrap()
 
 PAGES_DIR = ROOT / "src" / "pages"
 
+# NB : seules Import / Dashboard / Positions sont actives pour le moment.
+# Les autres pages (Opérations, Performance, Analyse fonda, Risque,
+# Opportunités) restent dans src/pages/ mais sont retirées de la navigation.
 pages = [
     st.Page(str(PAGES_DIR / "0_import.py"), title="Import / Mise à jour", icon="📥", default=True),
     st.Page(str(PAGES_DIR / "1_dashboard.py"), title="Dashboard", icon="🏠"),
     st.Page(str(PAGES_DIR / "2_positions.py"), title="Positions", icon="📊"),
-    st.Page(str(PAGES_DIR / "3_operations.py"), title="Opérations", icon="✍️"),
-    st.Page(str(PAGES_DIR / "4_performance.py"), title="Performance", icon="📈"),
-    st.Page(str(PAGES_DIR / "5_analyse_fonda.py"), title="Analyse fondamentale", icon="🔎"),
-    st.Page(str(PAGES_DIR / "6_risque.py"), title="Risque", icon="⚖️"),
-    st.Page(str(PAGES_DIR / "7_opportunites.py"), title="Opportunités & signaux", icon="🎯"),
 ]
 
 st.navigation(pages).run()
